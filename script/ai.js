@@ -1,53 +1,61 @@
 const axios = require('axios');
 
 module.exports.config = {
-  name: 'ai',
-  version: '1.0.0',
-  hasPermission: 0,
-  usePrefix: false,
-  aliases: ['gpt', 'openai'],
-  description: "An AI command powered by GPT-4",
-  usages: "ai [prompt]",
-  credits: 'Developer',
-  cooldowns: 3,
-  dependencies: {
-    "axios": ""
-  }
+    name: 'aigemini',
+    version: '1.0.0',
+    role: 0,
+    hasPrefix: true,
+    aliases: ['ai' , 'jay' , 'lian'],
+    description: 'Interact with the Gemin',
+    usage: 'ai [custom prompt] (attach image or not)',
+    credits: 'JayAr',
+    cooldown: 3,
 };
 
 module.exports.run = async function({ api, event, args }) {
-  const input = args.join(' ');
+    const attachment = event.messageReply?.attachments[0] || event.attachments[0];
+    const customPrompt = args.join(' ');
 
-  if (!input) {
-    api.sendMessage(`Please provide a question or statement after 'ai'. For example: 'ai What is the capital of France?'`, event.threadID, event.messageID);
-    return;
-  }
-  
-  if (input === "clear") {
-    try {
-      await axios.post('https://satomoigpt.onrender.com/clear', { id: event.senderID });
-      return api.sendMessage("Chat history has been cleared.", event.threadID, event.messageID);
-    } catch {
-      return api.sendMessage('An error occurred while clearing the chat history.', event.threadID, event.messageID);
+    if (!customPrompt && !attachment) {
+        return api.sendMessage('Please provide a prompt or attach a photo for the gemini to analyze.', event.threadID, event.messageID);
     }
-  }
 
-  api.sendMessage(`🔍 "${input}"`, event.threadID, event.messageID);
-  
-  try {
-    const url = event.type === "message_reply" && event.messageReply.attachments[0]?.type === "photo"
-      ? { link: event.messageReply.attachments[0].url }
-      : {};
+    let apiUrl = 'https://deku-rest-api-3jvu.onrender.com/gemini?';
 
-    const { data } = await axios.post('https://satomoigpt.onrender.com/chat', {
-      prompt: input,
-      customId: event.senderID,
-      ...url
+    if (attachment && attachment.type === 'photo') {
+        const prompt = customPrompt || 'answer this photo';
+        const imageUrl = attachment.url;
+        apiUrl += `prompt=${encodeURIComponent(prompt)}&url=${encodeURIComponent(imageUrl)}`;
+    } else {
+        apiUrl += `prompt=${encodeURIComponent(customPrompt)}`;
+    }
+
+    const initialMessage = await new Promise((resolve, reject) => {
+        api.sendMessage({
+            body: '🔍 Processing your request...',
+            mentions: [{ tag: event.senderID, id: event.senderID }],
+        }, event.threadID, (err, info) => {
+            if (err) return reject(err);
+            resolve(info);
+        }, event.messageID);
     });
 
-    api.sendMessage(`${data.message}`, event.threadID, event.messageID);
-    
-  } catch {
-    api.sendMessage('An error occurred while processing your request.', event.threadID, event.messageID);
-  }
+    try {
+        const response = await axios.get(apiUrl);
+        const aiResponse = response.data.gemini; // Accessing the "gemini" key directly
+
+        const formattedResponse = `
+✨ 𝙶𝚎𝚖𝚒𝚗𝚒 𝚁𝚎𝚜𝚙𝚘𝚗𝚜𝚎
+━━━━━━━━━━━━━━━━━━
+${aiResponse.trim()}
+━━━━━━━━━━━━━━━━━━
+-𝙹𝚊𝚢 𝙰𝚛 🩵
+        `;
+
+        await api.editMessage(formattedResponse.trim(), initialMessage.messageID);
+
+    } catch (error) {
+        console.error('Error:', error);
+        await api.editMessage('An error occurred, please try use "ai2" command.', initialMessage.messageID);
+    }
 };
